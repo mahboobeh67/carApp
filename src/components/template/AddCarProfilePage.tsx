@@ -2,7 +2,7 @@
 
 import { useState, ChangeEvent, FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import toast from "react-hot-toast";
+import toast, { Toaster } from "react-hot-toast";
 
 import { InputField } from "../InputField";
 import { SelectField } from "../SelectField";
@@ -24,6 +24,17 @@ export type CarProfileFormData = {
   reservationDate: Date | null;
 };
 
+type AddCarProfilePageProps = {
+  /**
+   * اگر data پاس داده شود => حالت ویرایش
+   * اگر پاس داده نشود => حالت ثبت جدید
+   */
+  data?: Partial<Omit<CarProfileFormData, "reservationDate">> & {
+    _id?: string;
+    reservationDate?: string | Date | null;
+  };
+};
+
 const AVAILABLE_SERVICES = [
   "تعویض روغن و فیلترها",
   "عیب‌یابی موتور (دیاگ)",
@@ -40,25 +51,27 @@ const FUEL_OPTIONS = [
   { label: "دیزلی", value: "diesel" },
 ];
 
-export default function AddCarProfilePage() {
+export default function AddCarProfilePage({ data }: AddCarProfilePageProps) {
   const router = useRouter();
   const [loading, setLoading] = useState<boolean>(false);
 
-  const [formData, setFormData] = useState<CarProfileFormData>({
-    ownerName: "",
-    carModel: "",
-    plateNumber: "",
-    phone: "",
-    description: "",
-    productionYear: "",
-    fuelType: "",
-    services: [],
-    images: [],
-    reservationDate: new Date(),
-  });
+  const [formData, setFormData] = useState<CarProfileFormData>(() => ({
+    ownerName: data?.ownerName ?? "",
+    carModel: data?.carModel ?? "",
+    plateNumber: data?.plateNumber ?? "",
+    phone: data?.phone ?? "",
+    description: data?.description ?? "",
+    productionYear: data?.productionYear ? String(data.productionYear) : "",
+    fuelType: (data?.fuelType as CarProfileFormData["fuelType"]) ?? "",
+    services: data?.services ?? [],
+    images: data?.images ?? [],
+    reservationDate: data?.reservationDate
+      ? new Date(data.reservationDate)
+      : new Date(),
+  }));
 
   const handleInputChange = (
-    e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+    e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -82,23 +95,39 @@ export default function AddCarProfilePage() {
       return;
     }
 
+    const isEditing = Boolean(data?._id);
+
     try {
       setLoading(true);
-      const res = await fetch("/api/receptions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
-      });
 
-      const data = await res.json();
+      const res = await fetch(
+        isEditing ? `/api/receptions/${data?._id}` : "/api/receptions",
+        {
+          method: isEditing ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(formData),
+        },
+      );
+
+      const result: unknown = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "خطا در ثبت نوبت خودرو");
+        const msg =
+          typeof result === "object" &&
+          result !== null &&
+          "error" in result &&
+          typeof (result as { error?: unknown }).error === "string"
+            ? (result as { error: string }).error
+            : isEditing
+              ? "خطا در ویرایش نوبت خودرو"
+              : "خطا در ثبت نوبت خودرو";
+
+        throw new Error(msg);
       }
 
-      toast.success("پرونده پذیرش خودرو با موفقیت ثبت شد 🎉");
+      toast.success(isEditing ? "تغییرات با موفقیت ذخیره شد 🎉" : "پرونده پذیرش خودرو با موفقیت ثبت شد 🎉");
       router.push("/dashboard/my-receptions");
       router.refresh();
     } catch (err: unknown) {
@@ -120,9 +149,10 @@ export default function AddCarProfilePage() {
           <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-600">
             سیستم پذیرش هوشمند
           </span>
-          <h2 className="mt-2 text-2xl font-extrabold text-gray-800 sm:text-3xl">
-            پذیرش در کلینیک خودرو
-          </h2>
+         <h2 className="mt-2 text-2xl font-extrabold text-gray-800 sm:text-3xl">
+  {data?._id ? "ویرایش درخواست پذیرش" : "ثبت درخواست پذیرش جدید"}
+</h2>
+
           <p className="mt-2 text-sm text-gray-500">
             ثبت مشخصات فنی و نوبت‌دهی تعمیرات
           </p>
@@ -130,6 +160,11 @@ export default function AddCarProfilePage() {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <h3 className="md:col-span-2 text-lg font-bold text-gray-800">
+  {data?._id ? "ویرایش نوبت" : "ثبت نهایی نوبت"}
+</h3>
+
+
             <InputField
               label="نام و نام‌خانوادگی مالک"
               name="ownerName"
@@ -217,6 +252,8 @@ export default function AddCarProfilePage() {
             label="تاریخ درخواست پذیرش خودرو"
           />
 
+          <Toaster />
+
           <button
             type="submit"
             disabled={loading}
@@ -225,8 +262,10 @@ export default function AddCarProfilePage() {
             {loading ? (
               <span className="flex items-center gap-2">
                 <span className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                در حال ثبت پرونده خودرو...
+                {data ? "در حال ذخیره تغییرات..." : "در حال ثبت پرونده خودرو..."}
               </span>
+            ) : data ? (
+              "ذخیره تغییرات"
             ) : (
               "ثبت پرونده و نوبت پذیرش خودرو"
             )}

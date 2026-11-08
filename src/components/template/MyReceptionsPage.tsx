@@ -1,4 +1,3 @@
-
 "use client";
 
 import React from "react";
@@ -18,7 +17,10 @@ function MyReceptionsPage({ receptions }: MyReceptionsPageProps) {
         </p>
       ) : (
         receptions.map((item) => (
-          <DashboardCard key={item._id} data={item} />
+          <DashboardCard
+            key={item._id}
+            data={JSON.parse(JSON.stringify(item))}
+          />
         ))
       )}
     </div>
